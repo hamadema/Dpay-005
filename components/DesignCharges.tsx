@@ -13,6 +13,7 @@ interface DesignChargesProps {
 const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user, syncId }) => {
   const isSanjaya = user.role === 'DESIGNER';
   const [isInitializingSync, setIsInitializingSync] = useState(false);
+  const [justCreatedSync, setJustCreatedSync] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -42,11 +43,10 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
         if (newId) {
           activeSyncId = newId;
           navigator.clipboard.writeText(newId);
-          setCopyFeedback(true);
-          setTimeout(() => setCopyFeedback(false), 3000);
+          setJustCreatedSync(true);
         }
       } catch (err) {
-        console.error("Auto-sync creation failed", err);
+        alert("Warning: Local cost added, but cloud sync failed to initialize. Check internet.");
       } finally {
         setIsInitializingSync(false);
       }
@@ -77,34 +77,55 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {isSanjaya && (
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 relative overflow-hidden">
-          {/* Cloud Bridge Banner for Sanjaya */}
-          <div className={`mb-8 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 transition-all ${syncId ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 border-2 border-dashed border-slate-200'}`}>
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
+          
+          {/* SUCCESS MESSAGE: KEY CREATED */}
+          {justCreatedSync && syncId && (
+            <div className="mb-8 p-6 bg-emerald-600 rounded-3xl text-white shadow-lg animate-in slide-in-from-top-4 duration-500">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-xl flex-shrink-0">
+                  <i className="fas fa-link"></i>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-black text-lg mb-1 tracking-tight">Cloud Bridge Established!</h3>
+                  <p className="text-emerald-50 text-xs font-bold uppercase tracking-widest mb-4">Sync Key has been copied to your clipboard.</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-black/20 p-4 rounded-xl font-mono text-sm font-bold border border-white/20 select-all block break-all">
+                      {syncId}
+                    </code>
+                    <button 
+                      onClick={() => { setJustCreatedSync(false); }}
+                      className="bg-white/20 hover:bg-white/30 p-4 rounded-xl transition-all"
+                    >
+                      <i className="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <p className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-80 italic">Send this key to Ravi to link your accounts.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Cloud Status Badge */}
+          <div className={`mb-8 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 transition-all ${syncId ? 'bg-indigo-50 border border-indigo-100' : 'bg-slate-50 border border-dashed border-slate-200'}`}>
             <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${syncId ? 'bg-white/20' : 'bg-slate-200 text-slate-400'}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${syncId ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
                 <i className={`fas ${syncId ? 'fa-cloud-circle-check' : 'fa-cloud-slash'} text-lg`}></i>
               </div>
               <div>
-                <p className="font-black text-sm uppercase tracking-wider">
-                  {syncId ? 'Project Cloud Sync Active' : 'Cloud Sync Disabled'}
+                <p className={`font-black text-xs uppercase tracking-widest ${syncId ? 'text-indigo-600' : 'text-slate-400'}`}>
+                  {syncId ? 'Live Bridge Active' : 'Offline Mode'}
                 </p>
-                {syncId ? (
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <code className="bg-black/20 px-2 py-0.5 rounded font-mono text-xs">{syncId}</code>
-                    <button onClick={handleCopyKey} className="text-[10px] font-bold underline opacity-80 hover:opacity-100">
-                      {copyFeedback ? 'COPIED!' : 'COPY KEY'}
+                {syncId && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-slate-500">KEY: {syncId.substring(0,10)}...</span>
+                    <button onClick={handleCopyKey} className="text-[10px] font-black text-indigo-600 hover:underline">
+                      {copyFeedback ? 'COPIED!' : 'COPY FULL KEY'}
                     </button>
                   </div>
-                ) : (
-                  <p className="text-[10px] font-bold opacity-60 uppercase tracking-tighter">Adding a cost will automatically link this to Ravi</p>
                 )}
               </div>
             </div>
-            {syncId && (
-               <div className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full uppercase tracking-widest border border-white/10">
-                 Linked to Ravi
-               </div>
-            )}
           </div>
 
           <h2 className="text-2xl font-black mb-8 flex items-center gap-3 text-slate-800">
@@ -159,42 +180,18 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Work Description (Optional)</label>
-              <input 
-                type="text" 
-                placeholder="Briefly explain what was done for this project..."
-                className="w-full border-2 border-slate-50 p-4 rounded-2xl bg-slate-50 outline-none focus:border-indigo-500 focus:bg-white transition-all font-medium"
-                value={formData.description}
-                onChange={e => setFormData({...formData, description: e.target.value})}
-              />
-            </div>
-
             <button 
               type="submit"
               disabled={isInitializingSync}
-              className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black shadow-2xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.01] active:scale-95 transition-all text-lg flex items-center justify-center gap-3 disabled:opacity-50"
+              className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-2xl hover:bg-indigo-600 hover:scale-[1.01] active:scale-95 transition-all text-lg flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {isInitializingSync ? (
-                <><i className="fas fa-spinner fa-spin"></i> Initializing Cloud Bridge...</>
+                <><i className="fas fa-spinner fa-spin"></i> Linking Cloud Bridge...</>
               ) : (
                 <><i className="fas fa-check-circle"></i> Add Cost & Notify Ravi</>
               )}
             </button>
           </form>
-
-          {/* New Key Alert */}
-          {copyFeedback && !syncId && (
-            <div className="mt-6 p-4 bg-emerald-50 border-2 border-emerald-100 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-4">
-              <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center">
-                <i className="fas fa-share-nodes"></i>
-              </div>
-              <div>
-                <p className="text-emerald-900 font-black text-xs uppercase tracking-wider">Sync Key Copied to Clipboard!</p>
-                <p className="text-emerald-700 text-[10px] font-bold">Send this key to Ravi so he can see your updates.</p>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -204,9 +201,6 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-3">
              <i className="fas fa-list-ul text-slate-300"></i> Cost History
           </h2>
-          <div className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            {charges.length} Entries
-          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -214,14 +208,13 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
               <tr className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                 <th className="px-8 py-5">Date</th>
                 <th className="px-8 py-5">Service</th>
-                <th className="px-8 py-5">Added By</th>
                 <th className="px-8 py-5 text-right">Cost (Rs.)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {charges.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-8 py-20 text-center text-slate-400 italic">No charges recorded yet</td>
+                  <td colSpan={3} className="px-8 py-20 text-center text-slate-400 italic">No charges recorded yet</td>
                 </tr>
               ) : (
                 charges.slice().reverse().map(charge => (
@@ -229,10 +222,7 @@ const DesignCharges: React.FC<DesignChargesProps> = ({ charges, templates, user,
                     <td className="px-8 py-6 text-sm font-bold text-slate-400 tabular-nums">{charge.date}</td>
                     <td className="px-8 py-6">
                       <div className="font-black text-slate-800 leading-tight group-hover:text-indigo-600 transition-colors">{charge.type}</div>
-                      <div className="text-xs text-slate-400 mt-0.5 italic truncate max-w-xs">{charge.description || 'No description provided.'}</div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-tighter">{charge.addedBy}</span>
+                      <div className="text-[10px] font-black text-indigo-500 uppercase tracking-tighter mt-1">{charge.addedBy}</div>
                     </td>
                     <td className="px-8 py-6 text-right font-black text-slate-900 text-lg tabular-nums">
                       Rs. {charge.amount.toLocaleString()}

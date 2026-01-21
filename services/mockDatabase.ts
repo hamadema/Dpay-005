@@ -4,7 +4,8 @@ import { DesignCharge, PaymentRecord, PriceTemplate, SecurityLog } from '../type
 class MockDatabase {
   private static STORAGE_KEY = 'design_ledger_db';
   private static SYNC_KEY = 'design_ledger_sync_id';
-  private static API_BASE = 'https://jsonblob.com/api/jsonBlob';
+  // npoint.io is more reliable for browser-based fetch as it returns ID in the body
+  private static API_BASE = 'https://api.npoint.io';
   private channel = new BroadcastChannel('ledger_sync_channel');
 
   public getData() {
@@ -50,42 +51,24 @@ class MockDatabase {
   }
 
   /**
-   * Creates a new Cloud Sync session and returns the Sync ID
+   * Creates a new Cloud Sync session using npoint.io
    */
   async createNewSyncSession() {
     const initialData = this.getData();
     try {
       const response = await fetch(MockDatabase.API_BASE, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Accept': 'application/json' 
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...initialData, updatedAt: Date.now(), securityLogs: [] })
       });
       
-      if (!response.ok) throw new Error("Cloud creation failed: " + response.statusText);
+      if (!response.ok) throw new Error("Cloud creation failed");
       
-      // JSONBlob returns the full URL in the Location header
-      const location = response.headers.get('Location');
-      if (location) {
-        // Extract the ID from the end of the URL (e.g., https://jsonblob.com/api/jsonBlob/123 -> 123)
-        const parts = location.split('/');
-        const id = parts[parts.length - 1];
-        if (id) {
-          this.setSyncId(id);
-          return id;
-        }
-      }
-      
-      // Fallback if Location header is missing or unreadable in some environments
-      // Try to read body in case it's there
       const body = await response.json();
       if (body && body.id) {
         this.setSyncId(body.id);
         return body.id;
       }
-
     } catch (e) {
       console.error("Failed to create cloud sync:", e);
       throw e;
@@ -97,7 +80,7 @@ class MockDatabase {
     try {
       await fetch(`${MockDatabase.API_BASE}/${syncId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
           securityLogs: [], 
@@ -111,9 +94,7 @@ class MockDatabase {
 
   async pullFromCloud(syncId: string) {
     try {
-      const response = await fetch(`${MockDatabase.API_BASE}/${syncId}`, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const response = await fetch(`${MockDatabase.API_BASE}/${syncId}`);
       if (!response.ok) return null;
       
       const cloudData = await response.json();
@@ -121,9 +102,7 @@ class MockDatabase {
       
       // Conflict resolution: Newest timestamp wins
       if (cloudData && (!localData.updatedAt || cloudData.updatedAt > localData.updatedAt)) {
-        // Preserve local security logs
         cloudData.securityLogs = localData.securityLogs || [];
-        
         localStorage.setItem(MockDatabase.STORAGE_KEY, JSON.stringify(cloudData));
         window.dispatchEvent(new CustomEvent('ledger_local_update'));
         return cloudData;
@@ -172,13 +151,6 @@ class MockDatabase {
     data.templates = templates;
     data.updatedAt = Date.now();
     this.saveData(data);
-  }
-
-  clearSecurityLogs() {
-    const data = this.getData();
-    data.securityLogs = [];
-    localStorage.setItem(MockDatabase.STORAGE_KEY, JSON.stringify(data));
-    window.dispatchEvent(new CustomEvent('ledger_local_update'));
   }
 }
 
