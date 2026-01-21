@@ -33,9 +33,16 @@ const App: React.FC = () => {
     const currentSyncId = db.getSyncId();
     if (currentSyncId && !isSyncing) {
       setIsSyncing(true);
-      await db.pullFromCloud(currentSyncId);
-      setLastSyncTime(Date.now());
-      setIsSyncing(false);
+      try {
+        const result = await db.pullFromCloud(currentSyncId);
+        if (result) {
+          setLastSyncTime(Date.now());
+        }
+      } catch (e) {
+        console.error("Auto-sync failed");
+      } finally {
+        setIsSyncing(false);
+      }
     }
   }, [isSyncing]);
 
@@ -49,9 +56,13 @@ const App: React.FC = () => {
     });
 
     // Start polling if sync is enabled
+    // Faster poll for testing, normally 30s is fine
     const pollInterval = setInterval(() => {
       performSync();
-    }, 30000); // Poll every 30 seconds
+    }, 15000); 
+
+    // Sync on mount if syncId exists
+    performSync();
 
     // Also sync on window focus
     const onFocus = () => performSync();
@@ -154,7 +165,13 @@ const App: React.FC = () => {
       />
       
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <Header user={currentUser} balance={balance} isSyncing={isSyncing} syncId={syncId} />
+        <Header 
+          user={currentUser} 
+          balance={balance} 
+          isSyncing={isSyncing} 
+          syncId={syncId} 
+          onManualSync={performSync}
+        />
         
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {activeTab === 'dashboard' && (
@@ -177,6 +194,7 @@ const App: React.FC = () => {
               charges={charges} 
               templates={templates} 
               user={currentUser} 
+              syncId={syncId}
             />
           )}
           {activeTab === 'payments' && (

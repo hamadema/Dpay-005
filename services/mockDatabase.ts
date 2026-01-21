@@ -4,6 +4,7 @@ import { DesignCharge, PaymentRecord, PriceTemplate, SecurityLog } from '../type
 class MockDatabase {
   private static STORAGE_KEY = 'design_ledger_db';
   private static SYNC_KEY = 'design_ledger_sync_id';
+  private static API_BASE = 'https://jsonblob.com/api/jsonBlob';
   private channel = new BroadcastChannel('ledger_sync_channel');
 
   public getData() {
@@ -12,6 +13,7 @@ class MockDatabase {
       charges: [], 
       payments: [], 
       securityLogs: [],
+      updatedAt: 0,
       templates: [
         { id: '1', name: 'Background Change', amount: 500 },
         { id: '2', name: 'Photo Retouch', amount: 300 },
@@ -47,36 +49,80 @@ class MockDatabase {
     }
   }
 
+  /**
+   * Creates a new Cloud Sync session and returns the Sync ID
+   */
+  async createNewSyncSession() {
+    const initialData = this.getData();
+    try {
+      const response = await fetch(MockDatabase.API_BASE, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Accept': 'application/json' 
+        },
+        body: JSON.stringify({ ...initialData, updatedAt: Date.now(), securityLogs: [] })
+      });
+      
+      if (!response.ok) throw new Error("Cloud creation failed: " + response.statusText);
+      
+      // JSONBlob returns the full URL in the Location header
+      const location = response.headers.get('Location');
+      if (location) {
+        // Extract the ID from the end of the URL (e.g., https://jsonblob.com/api/jsonBlob/123 -> 123)
+        const parts = location.split('/');
+        const id = parts[parts.length - 1];
+        if (id) {
+          this.setSyncId(id);
+          return id;
+        }
+      }
+      
+      // Fallback if Location header is missing or unreadable in some environments
+      // Try to read body in case it's there
+      const body = await response.json();
+      if (body && body.id) {
+        this.setSyncId(body.id);
+        return body.id;
+      }
+
+    } catch (e) {
+      console.error("Failed to create cloud sync:", e);
+      throw e;
+    }
+    return null;
+  }
+
   async pushToCloud(syncId: string, data: any) {
     try {
-      // We use npoint.io as a simple JSON relay. 
-      // Note: In a production app, use Firebase or a proper backend.
-      await fetch(`https://api.npoint.io/${syncId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch(`${MockDatabase.API_BASE}/${syncId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
           ...data,
-          securityLogs: [], // Don't sync security logs for privacy
+          securityLogs: [], 
           updatedAt: Date.now()
         })
       });
     } catch (e) {
-      console.warn("Cloud push failed, will retry later.");
+      console.warn("Cloud push failed.");
     }
   }
 
   async pullFromCloud(syncId: string) {
     try {
-      const response = await fetch(`https://api.npoint.io/${syncId}`);
+      const response = await fetch(`${MockDatabase.API_BASE}/${syncId}`, {
+        headers: { 'Accept': 'application/json' }
+      });
       if (!response.ok) return null;
-      const cloudData = await response.json();
       
+      const cloudData = await response.json();
       const localData = this.getData();
       
-      // Basic conflict resolution: newest data wins
+      // Conflict resolution: Newest timestamp wins
       if (cloudData && (!localData.updatedAt || cloudData.updatedAt > localData.updatedAt)) {
-        // Merge templates if cloud has none
-        if (!cloudData.templates) cloudData.templates = localData.templates;
+        // Preserve local security logs
+        cloudData.securityLogs = localData.securityLogs || [];
         
         localStorage.setItem(MockDatabase.STORAGE_KEY, JSON.stringify(cloudData));
         window.dispatchEvent(new CustomEvent('ledger_local_update'));
@@ -117,7 +163,6 @@ class MockDatabase {
     if (!data.securityLogs) data.securityLogs = [];
     data.securityLogs.push(log);
     if (data.securityLogs.length > 20) data.securityLogs.shift();
-    // Don't update updatedAt for security logs as they aren't synced
     localStorage.setItem(MockDatabase.STORAGE_KEY, JSON.stringify(data));
     window.dispatchEvent(new CustomEvent('ledger_local_update'));
   }
@@ -134,27 +179,6 @@ class MockDatabase {
     data.securityLogs = [];
     localStorage.setItem(MockDatabase.STORAGE_KEY, JSON.stringify(data));
     window.dispatchEvent(new CustomEvent('ledger_local_update'));
-  }
-
-  getExportString() {
-    const data = this.getData();
-    const exportData = { ...data, securityLogs: [] };
-    return btoa(encodeURIComponent(JSON.stringify(exportData)));
-  }
-
-  importData(exportString: string) {
-    try {
-      const decoded = decodeURIComponent(atob(exportString));
-      const data = JSON.parse(decoded);
-      if (data && (data.charges || data.payments)) {
-        data.updatedAt = Date.now();
-        this.saveData(data);
-        return true;
-      }
-    } catch (e) {
-      console.error("Failed to import ledger data", e);
-    }
-    return false;
   }
 }
 
